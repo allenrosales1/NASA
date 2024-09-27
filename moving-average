@@ -1,0 +1,57 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+def read_aeronet(filename):
+    df = pd.read_csv(filename, skiprows=6, na_values=['-999.000000', '-999.'])
+    df['datetime'] = pd.to_datetime(df['Date(dd:mm:yyyy)'] + ' ' + df['Time(hh:mm:ss)'],
+                                    format='%d:%m:%Y %H:%M:%S')
+    return df
+
+def calculate_moving_average(series, window):
+    r = window // 2
+    n = len(series)
+    result = np.zeros(n)
+    for k in range(n):
+        start = max(0, k - r)
+        end = min(n, k + r + 1)
+        valid_values = series.iloc[start:end].dropna()
+        if len(valid_values) > 0:
+            result[k] = np.mean(valid_values)
+        else:
+            result[k] = np.nan
+    return result
+
+# Read the data
+filename = 'Tdata24.lev15'
+df = read_aeronet(filename)
+
+# Sort by datetime
+df = df.sort_values('datetime')
+
+# Identify all AOD columns
+aod_columns = [col for col in df.columns if col.startswith('AOD_') and col.endswith('nm')]
+
+# Calculate the average AOD across all wavelengths
+df['AOD_avg'] = df[aod_columns].mean(axis=1)
+
+# Calculate 14-day moving average for the average AOD
+window_size = 14 * 24  # 14 days * 24 hours (assuming hourly data)
+df['AOD_MA'] = calculate_moving_average(df['AOD_avg'], window_size)
+
+# Plotting
+plt.figure(figsize=(15, 8))
+
+# Plot raw data for all wavelengths with  dots
+for col in aod_columns:
+    plt.scatter(df['datetime'], df[col], color='black', s=5, alpha=0.5)  # Increased size from 2 to 5
+
+# Plot moving average 
+plt.plot(df['datetime'], df['AOD_MA'], color='red', linewidth=3, label='14-day Moving Average')  # Increased linewidth from 2 to 3
+
+plt.xlabel('Time')
+plt.ylabel('AOD')
+plt.title('Aerosol Optical Depth - All Wavelengths (14-day Moving Average)')
+plt.legend()
+plt.tight_layout()
+plt.show()
