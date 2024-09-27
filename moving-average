@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator
 
 def read_aeronet(filename):
     df = pd.read_csv(filename, skiprows=6, na_values=['-999.000000', '-999.'])
@@ -11,15 +12,13 @@ def read_aeronet(filename):
 def calculate_moving_average(series, window):
     r = window // 2
     n = len(series)
-    result = np.zeros(n)
+    result = np.full(n, np.nan)
     for k in range(n):
         start = max(0, k - r)
         end = min(n, k + r + 1)
-        valid_values = series.iloc[start:end].dropna()
-        if len(valid_values) > 0:
-            result[k] = np.mean(valid_values)
-        else:
-            result[k] = np.nan
+        window_data = series.iloc[start:end]
+        if not window_data.isna().all():
+            result[k] = np.nanmean(window_data)
     return result
 
 # Read the data
@@ -36,22 +35,38 @@ aod_columns = [col for col in df.columns if col.startswith('AOD_') and col.endsw
 df['AOD_avg'] = df[aod_columns].mean(axis=1)
 
 # Calculate 14-day moving average for the average AOD
-window_size = 14 * 24  # 14 days * 24 hours (assuming hourly data)
+window_size = 14 * 24 + 1  # 14 days * 24 hours + 1 (to make it centered)
 df['AOD_MA'] = calculate_moving_average(df['AOD_avg'], window_size)
 
+# Calculate daily averages
+df['date'] = df['datetime'].dt.date
+daily_avg = df.groupby('date')['AOD_avg'].mean().reset_index()
+
 # Plotting
-plt.figure(figsize=(15, 8))
+fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(15, 10), height_ratios=[3, 1], sharex=True)
+plt.subplots_adjust(hspace=0.1)
 
-# Plot raw data for all wavelengths with  dots
+# Main plot
 for col in aod_columns:
-    plt.scatter(df['datetime'], df[col], color='black', s=5, alpha=0.5)  # Increased size from 2 to 5
+    ax1.scatter(df['datetime'], df[col], color='black', s=5, alpha=0.5)
+ax1.plot(df['datetime'], df['AOD_MA'], color='red', linewidth=3, label='14-day Moving Average')
+ax1.set_ylabel('AOD')
+ax1.set_title('Aerosol Optical Depth - All Wavelengths (14-day Moving Average)')
+ax1.legend()
 
-# Plot moving average 
-plt.plot(df['datetime'], df['AOD_MA'], color='red', linewidth=3, label='14-day Moving Average')  # Increased linewidth from 2 to 3
+# Daily average plot
+ax2.bar(daily_avg['date'], daily_avg['AOD_avg'], width=1, align='center', color='skyblue', alpha=0.7)
+ax2.set_ylabel('Daily Avg AOD')
+ax2.set_xlabel('Date')
 
-plt.xlabel('Time')
-plt.ylabel('AOD')
-plt.title('Aerosol Optical Depth - All Wavelengths (14-day Moving Average)')
-plt.legend()
+# Format x-axis
+ax2.xaxis.set_minor_locator(AutoMinorLocator())
+fig.autofmt_xdate()
+
+# Add text labels for daily averages
+for i, row in daily_avg.iterrows():
+    ax2.text(row['date'], row['AOD_avg'], f'{row["AOD_avg"]:.3f}', 
+             ha='center', va='bottom', fontsize=8, rotation=90)
+
 plt.tight_layout()
 plt.show()
